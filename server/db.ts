@@ -161,8 +161,6 @@ export function buildNextDayCompensationPlan(
   const bulkCarbShortfall = Math.max(0, Math.round((bulkMetrics.target_carbs_g - consumed.carbs) * 10) / 10);
   const bulkFatShortfall = Math.max(0, Math.round((bulkMetrics.target_fat_g - consumed.fat) * 10) / 10);
 
-  // 增肌隔日補償邏輯：
-  // 採「20%~25% 漸進式合成回補 (Progressive Anabolic Catch-up)」，避免隔日單次暴食造成消化負擔與內臟脂肪堆積
   const bulkCalDelta = bulkCalShortfall > 100
     ? Math.min(360, Math.max(150, Math.round(bulkCalShortfall * 0.22)))
     : (consumed.calories > bulkMetrics.target_calories + 200 ? -150 : 0);
@@ -271,7 +269,7 @@ export function buildNextDayCompensationPlan(
   // =========================================================================
   // 方案 B：【減脂專屬】隔日補償方案 (Fat Loss Next-Day Compensation)
   // =========================================================================
-  const cutCalDiff = Math.round(consumed.calories - cutMetrics.target_calories); // 負數=比減脂目標更低；正數=減脂超標
+  const cutCalDiff = Math.round(consumed.calories - cutMetrics.target_calories);
   const cutProShortfall = Math.max(0, Math.round((cutMetrics.target_protein_g - consumed.protein) * 10) / 10);
   const cutCarbDiff = Math.round((consumed.carbs - cutMetrics.target_carbs_g) * 10) / 10;
   const cutFatDiff = Math.round((consumed.fat - cutMetrics.target_fat_g) * 10) / 10;
@@ -279,12 +277,9 @@ export function buildNextDayCompensationPlan(
   const isCutCalOvershoot = cutCalDiff > 120;
   const isCutBelowBmr = consumed.calories < user.bmr;
 
-  // 減脂隔日補償邏輯：
-  // 情境 1：若今日熱量與蛋白質攝取不足（甚至低於 BMR），隔日嚴禁把未吃的熱量變本加厲暴食，而是「鎖定標準減脂熱量 + 強力追回純蛋白質缺口 (+15~30g)」，防止掉肌肉與基礎代謝崩盤。
-  // 情境 2：若今日減脂熱量/碳水/油脂超標，隔日啟動「溫和赤字修正 (-200~300 kcal，絕不低於 BMR)」，下修精製碳水與油脂並維持 100% 高蛋白。
   const cutCalDelta = isCutCalOvershoot
     ? -Math.min(280, Math.max(150, Math.round(cutCalDiff * 0.5)))
-    : (cutProShortfall > 15 ? 80 : 0); // 若蛋白質嚴重不足，隔日微幅增加純蛋白熱量 (+80 kcal ≈ +20g 純蛋白)
+    : (cutProShortfall > 15 ? 80 : 0);
 
   const cutAdjustedCal = Math.max(user.bmr, cutMetrics.target_calories + cutCalDelta);
 
@@ -294,7 +289,7 @@ export function buildNextDayCompensationPlan(
 
   const cutCarbDelta = isCutCalOvershoot || cutCarbDiff > 20
     ? -Math.min(40, Math.max(20, Math.round(Math.max(20, cutCarbDiff) * 0.5)))
-    : -10; // 減脂補償日優先將熱量配額讓給高蛋白與高纖蔬菜
+    : -10;
 
   const cutFatDelta = isCutCalOvershoot || cutFatDiff > 10
     ? -Math.min(12, Math.max(5, Math.round(Math.max(10, cutFatDiff) * 0.4)))
@@ -410,7 +405,6 @@ export function buildNextDayCompensationPlan(
   };
 }
 
-
 const DATA_DIR = path.join(process.cwd(), '.data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const MEALS_FILE = path.join(DATA_DIR, 'meal_logs.json');
@@ -473,7 +467,7 @@ const INITIAL_USER: UserProfile = {
   updated_at: new Date().toISOString()
 };
 
-// 預設示範餐點紀錄 (讓使用者首次進入就看到豐富的雲端歷史紀錄)
+// 預設示範餐點紀錄
 const INITIAL_MEALS: MealLog[] = [
   {
     id: 'meal_demo_001',
@@ -562,7 +556,7 @@ const INITIAL_MEALS: MealLog[] = [
   }
 ];
 
-class DatabaseService {
+export class DatabaseService {
   private users: Map<string, UserProfile> = new Map();
   private meals: MealLog[] = [];
 
@@ -627,10 +621,6 @@ class DatabaseService {
     }
   }
 
-  /**
-   * 生成全局 100% 唯一的跨裝置同步代碼
-   * 比對所有現有使用者的 sync_code 與 ID，保證絕對無碰撞、不重複
-   */
   public generateUniqueSyncCode(): string {
     const existingCodes = new Set<string>();
     for (const u of this.users.values()) {
@@ -676,10 +666,7 @@ class DatabaseService {
     }
     const cleanId = identifier.trim();
 
-    // 1. 先用同步碼或 ID 尋找
     let user = this.findUserBySyncCode(cleanId);
-
-    // 2. 若未找到，嘗試用姓名尋找
     if (!user) {
       user = this.findUserByName(cleanId);
     }
@@ -691,7 +678,6 @@ class DatabaseService {
       };
     }
 
-    // 3. 檢查安全 PIN 碼 (若該帳號有設定)
     if (user.pin && user.pin.trim()) {
       if (!pin || !pin.trim()) {
         return { success: false, error: '此帳號已設定安全保護 PIN 碼，請輸入 4-6 位數 PIN 碼' };
@@ -739,16 +725,13 @@ class DatabaseService {
     activity_level?: 'sedentary' | 'light' | 'moderate' | 'very_active';
     pin?: string;
   }): UserProfile {
-    // 檢查是否有完全相同暱稱與身體數據的已存在使用者
     const existingExact = this.findDuplicateUser(userData);
     if (existingExact) {
       return existingExact;
     }
 
-    // 若暱稱已被使用，自動更新現有使用者或回傳該使用者，防止資料庫重複冗餘
     const existingName = this.findUserByName(userData.name);
     if (existingName) {
-      // 若同名使用者存在，更新其最新身體數據而不是建立重複的無效記錄
       return this.updateUser(existingName.id, {
         gender: userData.gender,
         age: userData.age,
@@ -819,7 +802,6 @@ class DatabaseService {
       updated_at: new Date().toISOString()
     };
 
-    // 自動依新體重、身高、目標重算代謝與營養指標
     const recalculated = calculateUserMetrics(
       updated.gender,
       updated.weight,
@@ -847,43 +829,28 @@ class DatabaseService {
     if (deleted) {
       // 連帶清理該使用者的所有餐點紀錄
       this.meals = this.meals.filter(m => m.user_id !== targetId);
-      this.saveMealsToDisk();
       this.saveUsersToDisk();
-      return true;
+      this.saveMealsToDisk();
     }
-    return false;
+    return deleted;
   }
 
-  // 取得指定使用者的餐點紀錄 (嚴格資料隔離：未提供 userId 則不回傳任何資料)
-  public getMealLogs(userId?: string): MealLog[] {
-    if (!userId) {
-      return [];
-    }
+  // =========================================================================
+  // 餐點紀錄 (Meal Logs) 管理方法
+  // =========================================================================
+
+  public getMealsByUserId(userId: string): MealLog[] {
+    const user = this.getUser(userId);
+    if (!user) return [];
     return this.meals
-      .filter(m => m.user_id === userId)
+      .filter(m => m.user_id === user.id)
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }
 
-  public addMealLog(meal: Omit<MealLog, 'id' | 'created_at'>): MealLog {
-    // 冪等防重複機制：如果在過去 60 秒內已為該使用者記錄了相同餐名與相近熱量的餐點，則直接回傳該紀錄，不重複新增
-    const now = Date.now();
-    const existingRecentMeal = this.meals.find(m => {
-      if (m.user_id !== meal.user_id) return false;
-      if (m.meal_name.trim().toLowerCase() !== meal.meal_name.trim().toLowerCase()) return false;
-      const mealTime = new Date(m.created_at || m.timestamp).getTime();
-      const timeDiff = Math.abs(now - mealTime);
-      const isWithinWindow = timeDiff < 60 * 1000; // 60 秒內
-      const isSameCalories = Math.abs(m.total_calories - meal.total_calories) < 2;
-      return isWithinWindow && isSameCalories;
-    });
-
-    if (existingRecentMeal) {
-      return existingRecentMeal;
-    }
-
+  public addMeal(meal: Omit<MealLog, 'id' | 'created_at'>): MealLog {
     const newMeal: MealLog = {
       ...meal,
-      id: 'meal_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+      id: 'meal_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       created_at: new Date().toISOString()
     };
     this.meals.unshift(newMeal);
@@ -891,109 +858,15 @@ class DatabaseService {
     return newMeal;
   }
 
-  // 刪除指定餐點 (驗證擁有者 ID，防止越權刪除)
-  public deleteMealLog(mealId: string, userId?: string): boolean {
-    const targetMeal = this.meals.find(m => m.id === mealId);
-    if (!targetMeal) {
-      return false;
+  public deleteMeal(mealId: string, userId: string): boolean {
+    const index = this.meals.findIndex(m => m.id === mealId && m.user_id === userId);
+    if (index !== -1) {
+      this.meals.splice(index, 1);
+      this.saveMealsToDisk();
+      return true;
     }
-    if (userId && targetMeal.user_id !== userId) {
-      // 權限不符，非餐點擁有者禁止刪除
-      return false;
-    }
-    this.meals = this.meals.filter(m => m.id !== mealId);
-    this.saveMealsToDisk();
-    return true;
-  }
-
-  public getDailySummary(userId?: string, dateStr?: string) {
-    if (!userId) {
-      return null;
-    }
-    const user = this.getUser(userId);
-    if (!user) {
-      return null;
-    }
-    const targetDate = dateStr ? new Date(dateStr) : new Date();
-    const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()).getTime();
-    const endOfDay = startOfDay + 86400000;
-
-    const todayMeals = this.meals.filter(m => {
-      if (m.user_id !== user.id) return false;
-      const t = new Date(m.timestamp).getTime();
-      return t >= startOfDay && t < endOfDay;
-    });
-
-    const consumed = todayMeals.reduce((acc, m) => {
-      acc.calories += m.total_calories;
-      acc.protein += m.total_protein;
-      acc.carbs += m.total_carbs;
-      acc.fat += m.total_fat;
-      return acc;
-    }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
-
-    consumed.calories = Math.round(consumed.calories);
-    consumed.protein = Math.round(consumed.protein * 10) / 10;
-    consumed.carbs = Math.round(consumed.carbs * 10) / 10;
-    consumed.fat = Math.round(consumed.fat * 10) / 10;
-
-    const remaining = {
-      calories: Math.max(0, user.target_calories - consumed.calories),
-      protein: Math.max(0, Math.round((user.target_protein_g - consumed.protein) * 10) / 10),
-      carbs: Math.max(0, Math.round((user.target_carbs_g - consumed.carbs) * 10) / 10),
-      fat: Math.max(0, Math.round((user.target_fat_g - consumed.fat) * 10) / 10)
-    };
-
-    const compensation_plan = buildNextDayCompensationPlan(user, consumed, targetDate);
-
-    return {
-      user_id: user.id,
-      user_name: user.name,
-      date: targetDate.toISOString().split('T')[0],
-      meals_count: todayMeals.length,
-      user_target: {
-        calories: user.target_calories,
-        protein_g: user.target_protein_g,
-        carbs_g: user.target_carbs_g,
-        fat_g: user.target_fat_g,
-        goal: user.goal,
-        tdee: user.tdee
-      },
-      consumed,
-      remaining,
-      compensation_plan,
-      today_meals: todayMeals
-    };
-  }
-
-  // 資料庫檢視器 (落實 Row-Level Security 租戶隔離：僅能檢視當前使用者的個人數據)
-  public getDatabaseTables(userId?: string) {
-    const user = userId ? this.getUser(userId) : null;
-    const userMeals = userId ? this.getMealLogs(userId) : [];
-
-    return {
-      schema_ddl: DB_SCHEMA_DDL,
-      rls_policy: {
-        enabled: true,
-        isolated_user_id: userId || 'unauthenticated',
-        message: '【Row-Level Security 租戶隔離模式生效中】僅允許檢視當前已驗證使用者的資料行，其他使用者的身形隱私與飲食紀錄已在資料存取層阻斷。'
-      },
-      tables: {
-        users: {
-          name: 'users',
-          count: user ? 1 : 0,
-          columns: ['id', 'name', 'gender', 'age', 'height', 'weight', 'body_fat_rate', 'goal', 'activity_level', 'bmr', 'tdee', 'target_calories', 'target_protein_g', 'target_carbs_g', 'target_fat_g', 'created_at', 'updated_at'],
-          sample_rows: user ? [user] : []
-        },
-        meal_logs: {
-          name: 'meal_logs',
-          count: userMeals.length,
-          columns: ['id', 'user_id', 'meal_type', 'meal_name', 'image_path', 'timestamp', 'foods', 'total_calories', 'total_protein', 'total_carbs', 'total_fat', 'macro_ratio', 'dietitian_feedback', 'created_at'],
-          sample_rows: userMeals.slice(0, 15)
-        }
-      }
-    };
+    return false;
   }
 }
 
-export const dbService = new DatabaseService();
+export const db = new DatabaseService();
