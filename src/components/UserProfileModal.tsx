@@ -32,7 +32,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // 載入使用者清單
+  // 載入可切換的使用者清單 (後端 API + LocalStorage 雙重備份)
   const fetchUsers = async () => {
     try {
       const res = await fetch('/api/user');
@@ -45,7 +45,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         }
       }
     } catch (err) {
-      console.warn('API 讀取失敗，讀取本地暫存');
+      console.warn('後端讀取失敗，改從 LocalStorage 讀取');
     }
 
     const saved = localStorage.getItem('nutrifit_users_list');
@@ -127,49 +127,59 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         }
       }
     } catch (err) {
-      console.warn('API 失敗，啟動本地儲存');
+      console.warn('API 儲存失敗，轉為本地安全存檔');
     }
 
+    // 防呆備份：即便 API 失敗也不會白屏，直接使用完整格式
     applyUserAndClose(fallbackUser);
   };
 
-  // 防呆儲存並關閉 Modal
+  // 安全寫入並關閉彈窗
   const applyUserAndClose = (user: UserProfile) => {
     try {
       localStorage.setItem('nutrifit_user_id', user.id);
       localStorage.setItem('nutrifit_user', JSON.stringify(user));
 
+      // 更新本地清單
       const updatedList = [...userList.filter(u => u.id !== user.id), user];
       localStorage.setItem('nutrifit_users_list', JSON.stringify(updatedList));
 
       onSelectUser(user);
     } catch (e) {
-      console.error(e);
+      console.error('State 更新錯誤:', e);
     } finally {
       setLoading(false);
-      onClose(); // 👈 儲存後正確關閉彈窗
+      onClose(); // 關閉 Modal
     }
   };
 
-  // 刪除使用者
+  // 刪除使用者邏輯
   const handleDeleteUser = async (userToDelete: UserProfile, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!window.confirm(`確定要刪除使用者「${userToDelete.name}」嗎？`)) return;
 
     try {
+      // 呼叫 DELETE API
       await fetch(`/api/user?id=${userToDelete.id}`, { method: 'DELETE' });
     } catch (err) {
-      console.warn('API 刪除失敗，改為本地刪除');
+      console.warn('後端刪除失敗，改為本地刪除');
     }
 
+    // 本地同步更新清單
     const newList = userList.filter(u => u.id !== userToDelete.id);
     setUserList(newList);
     localStorage.setItem('nutrifit_users_list', JSON.stringify(newList));
 
+    // 若刪除的是當前使用中的帳號，清除選取
     if (currentUser?.id === userToDelete.id) {
       localStorage.removeItem('nutrifit_user_id');
       localStorage.removeItem('nutrifit_user');
     }
+  };
+
+  // 切換已存在的使用者
+  const handleSelectExistingUser = (selectedUser: UserProfile) => {
+    applyUserAndClose(selectedUser);
   };
 
   return (
@@ -180,7 +190,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-950/60">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
-              <User className="w-6 h-6" />
+              <User className="w-6 h-6"/>
             </div>
             <div>
               <h2 className="text-xl font-bold text-white">切換 / 登入或新增檔案</h2>
@@ -206,7 +216,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Sparkles className="w-4 h-4" /> 快速建立 / 編輯檔案
+            <Sparkles className="w-4 h-4"/> 快速建立 / 編輯檔案
           </button>
           <button
             type="button"
@@ -217,7 +227,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Users className="w-4 h-4" /> 切換現有身份 ({userList.length})
+            <Users className="w-4 h-4"/> 切換現有身份 ({userList.length})
           </button>
         </div>
 
@@ -262,7 +272,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             <div>
               <div className="flex justify-between items-center mb-1">
                 <label className="block text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                  <KeyRound className="w-3.5 h-3.5 text-slate-400" /> 個人同步防護 PIN 碼 (可選)：
+                  <KeyRound className="w-3.5 h-3.5 text-slate-400"/> 個人同步防護 PIN 碼 (可選)：
                 </label>
                 <span className="text-[11px] text-slate-500">設定後跨裝置登入需驗證</span>
               </div>
@@ -331,7 +341,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               </div>
             </div>
 
-            {/* 計算預覽 */}
+            {/* 即時計算結果 preview 卡片 */}
             <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-xl grid grid-cols-3 gap-2 text-center">
               <div>
                 <div className="text-[11px] text-slate-400">基礎代謝 BMR</div>
@@ -353,7 +363,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 disabled={loading}
                 className="w-full py-3 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
-                <CheckCircle className="w-5 h-5" />
+                <CheckCircle className="w-5 h-5"/>
                 {loading ? '儲存中...' : '完成選擇，開始使用'}
               </button>
             </div>
@@ -394,7 +404,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => applyUserAndClose(u)}
+                        onClick={() => handleSelectExistingUser(u)}
                         disabled={isCurrent}
                         className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
                           isCurrent
@@ -411,7 +421,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                         className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
                         title="刪除此使用者"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-4 h-4"/>
                       </button>
                     </div>
                   </div>
