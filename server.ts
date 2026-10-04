@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
-import { db, DB_SCHEMA_DDL } from "./server/db";
+import { dbService, DB_SCHEMA_DDL } from "./server/db";
 import { analyzeMealImage, askDietitianQuestion, generateRecommendedRecipes } from "./server/geminiService";
 import { queryNutritionDatabase, TAIWAN_FDA_NUTRITION_DB } from "./server/nutritionDb";
 
