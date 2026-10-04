@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, FitnessGoal, ActivityLevel } from '../types';
-import { User, CheckCircle, Sparkles, Users, KeyRound, Trash2 } from 'lucide-react';
+import { User, CheckCircle, Shield, Sparkles, Scale, HeartPulse, Trophy, Users, KeyRound, Activity, Trash2 } from 'lucide-react';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -79,24 +79,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const targetCalories = goal === 'muscle_gain' ? tdee + 300 : tdee - 400;
   const targetProtein = Math.round((targetCalories * 0.3) / 4);
 
-  // 儲存並關閉 Modal
-  const applyUserAndClose = (user: UserProfile) => {
-    try {
-      localStorage.setItem('nutrifit_user_id', user.id);
-      localStorage.setItem('nutrifit_user', JSON.stringify(user));
-
-      const updatedList = [...userList.filter(u => u.id !== user.id), user];
-      localStorage.setItem('nutrifit_users_list', JSON.stringify(updatedList));
-
-      onSelectUser(user);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-      onClose();
-    }
-  };
-
   // 提交註冊 / 編輯
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,6 +131,24 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     }
 
     applyUserAndClose(fallbackUser);
+  };
+
+  // 防呆儲存並關閉 Modal
+  const applyUserAndClose = (user: UserProfile) => {
+    try {
+      localStorage.setItem('nutrifit_user_id', user.id);
+      localStorage.setItem('nutrifit_user', JSON.stringify(user));
+
+      const updatedList = [...userList.filter(u => u.id !== user.id), user];
+      localStorage.setItem('nutrifit_users_list', JSON.stringify(updatedList));
+
+      onSelectUser(user);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+      onClose(); // 👈 儲存後正確關閉彈窗
+    }
   };
 
   // 刪除使用者
