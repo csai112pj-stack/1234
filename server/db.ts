@@ -39,7 +39,6 @@ export function calculateUserMetrics(
   let targetCarbsG = 0;
 
   if (goal === 'muscle_gain') {
-    // 增肌：熱量盈餘 +300 kcal，蛋白質 2.0g/kg，脂肪佔總熱量 25%，其餘為碳水化合物
     targetCalories = tdee + 300;
     targetProteinG = Math.round(weight * 2.0);
     const fatCalories = targetCalories * 0.25;
@@ -47,7 +46,6 @@ export function calculateUserMetrics(
     const remainingCalories = targetCalories - (targetProteinG * 4) - fatCalories;
     targetCarbsG = Math.max(50, Math.round(remainingCalories / 4));
   } else if (goal === 'fat_loss') {
-    // 減脂：熱量赤字 -400 kcal，提高蛋白質至 2.2g/kg (防止肌肉流失)，脂肪 22%，其餘碳水
     targetCalories = Math.max(1200, tdee - 400);
     targetProteinG = Math.round(weight * 2.2);
     const fatCalories = targetCalories * 0.22;
@@ -55,7 +53,6 @@ export function calculateUserMetrics(
     const remainingCalories = targetCalories - (targetProteinG * 4) - fatCalories;
     targetCarbsG = Math.max(40, Math.round(remainingCalories / 4));
   } else {
-    // 維持
     targetCalories = tdee;
     targetProteinG = Math.round(weight * 1.8);
     const fatCalories = targetCalories * 0.25;
@@ -74,10 +71,6 @@ export function calculateUserMetrics(
   };
 }
 
-/**
- * 依據今日熱量與三大營養素總結進度，自動評估是否未達標並產出「隔日補償方案」
- * 分別針對【增肌 (Muscle Gain)】與【減脂 (Fat Loss)】獨立製作專屬的隔日配額微調、營養素補償策略與三餐執行課表
- */
 export function buildNextDayCompensationPlan(
   user: UserProfile,
   consumed: { calories: number; protein: number; carbs: number; fat: number },
@@ -87,7 +80,6 @@ export function buildNextDayCompensationPlan(
   const nextDateObj = new Date(targetDate.getTime() + 86400000);
   const nextDateStr = nextDateObj.toISOString().split('T')[0];
 
-  // 1. 計算針對當前目標的缺口或超標狀態
   const calDiff = Math.round(consumed.calories - user.target_calories);
   const proDiff = Math.round((consumed.protein - user.target_protein_g) * 10) / 10;
   const carbDiff = Math.round((consumed.carbs - user.target_carbs_g) * 10) / 10;
@@ -135,7 +127,6 @@ export function buildNextDayCompensationPlan(
     unmet_items: unmetItems.length > 0 ? unmetItems : ['今日各項指標接近目標，隔日可維持穩態進度']
   };
 
-  // 分別計算該使用者在「增肌」與「減脂」下的標準科學基數
   const bulkMetrics = calculateUserMetrics(
     user.gender,
     user.weight,
@@ -153,9 +144,6 @@ export function buildNextDayCompensationPlan(
     user.activity_level
   );
 
-  // =========================================================================
-  // 方案 A：【增肌專屬】隔日補償方案 (Muscle Gain Next-Day Compensation)
-  // =========================================================================
   const bulkCalShortfall = Math.max(0, bulkMetrics.target_calories - consumed.calories);
   const bulkProShortfall = Math.max(0, Math.round((bulkMetrics.target_protein_g - consumed.protein) * 10) / 10);
   const bulkCarbShortfall = Math.max(0, Math.round((bulkMetrics.target_carbs_g - consumed.carbs) * 10) / 10);
@@ -266,9 +254,6 @@ export function buildNextDayCompensationPlan(
     warning_note: '增肌補償切勿以炸物、含糖手搖飲或高脂甜點湊熱量，否則補償熱量將優先囤積於脂肪細胞而非骨骼肌。'
   };
 
-  // =========================================================================
-  // 方案 B：【減脂專屬】隔日補償方案 (Fat Loss Next-Day Compensation)
-  // =========================================================================
   const cutCalDiff = Math.round(consumed.calories - cutMetrics.target_calories);
   const cutProShortfall = Math.max(0, Math.round((cutMetrics.target_protein_g - consumed.protein) * 10) / 10);
   const cutCarbDiff = Math.round((consumed.carbs - cutMetrics.target_carbs_g) * 10) / 10;
@@ -415,14 +400,8 @@ function ensureDataDir() {
   }
 }
 
-// 採用 30 個清晰易辨識的大寫英數字符 (排除易混淆的 0, O, 1, I, L)
 const SYNC_CHARSET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
-/**
- * 密碼學安全專屬同步碼生成器
- * 組合數：30^8 = 656,100,000,000 (超過 6,561 億種組合)
- * 嚴格支援碰撞檢測與重試，100% 確保資料庫中絕對唯一、絕不重複
- */
 export function generateSyncCode(existingCodes?: Set<string>): string {
   let attempts = 0;
   let code = '';
@@ -448,7 +427,6 @@ export function generateSyncCode(existingCodes?: Set<string>): string {
   return code;
 }
 
-// 預設使用者資料 (72kg, 178cm, 16.5% 體脂, 目標: 增肌)
 const DEFAULT_METRICS = calculateUserMetrics('male', 72, 178, 26, 'muscle_gain', 'moderate');
 
 const INITIAL_USER: UserProfile = {
@@ -467,7 +445,6 @@ const INITIAL_USER: UserProfile = {
   updated_at: new Date().toISOString()
 };
 
-// 預設示範餐點紀錄
 const INITIAL_MEALS: MealLog[] = [
   {
     id: 'meal_demo_001',
@@ -636,9 +613,10 @@ export class DatabaseService {
   }
 
   public findUserByName(name: string): UserProfile | null {
-    const trimmed = name.trim().toLowerCase();
+    if (!name) return null;
+    const trimmed = String(name).trim().toLowerCase();
     for (const user of this.users.values()) {
-      if (user.name.trim().toLowerCase() === trimmed) {
+      if (user.name && String(user.name).trim().toLowerCase() === trimmed) {
         return user;
       }
     }
@@ -647,10 +625,10 @@ export class DatabaseService {
 
   public findUserBySyncCode(code: string): UserProfile | null {
     if (!code) return null;
-    const clean = code.trim().toUpperCase();
+    const clean = String(code).trim().toUpperCase();
     const cleanDigits = clean.replace(/[^0-9A-Z]/g, '');
     for (const user of this.users.values()) {
-      if (user.id === code.trim()) return user;
+      if (user.id === clean) return user;
       if (user.sync_code) {
         const userSyncUpper = user.sync_code.toUpperCase();
         if (userSyncUpper === clean) return user;
@@ -661,10 +639,10 @@ export class DatabaseService {
   }
 
   public loginUser(identifier: string, pin?: string): { success: true; user: UserProfile } | { success: false; error: string } {
-    if (!identifier || !identifier.trim()) {
+    if (!identifier || !String(identifier).trim()) {
       return { success: false, error: '請輸入專屬同步碼 (Sync Code) 或姓名' };
     }
-    const cleanId = identifier.trim();
+    const cleanId = String(identifier).trim();
 
     let user = this.findUserBySyncCode(cleanId);
     if (!user) {
@@ -679,10 +657,10 @@ export class DatabaseService {
     }
 
     if (user.pin && user.pin.trim()) {
-      if (!pin || !pin.trim()) {
+      if (!pin || !String(pin).trim()) {
         return { success: false, error: '此帳號已設定安全保護 PIN 碼，請輸入 4-6 位數 PIN 碼' };
       }
-      if (pin.trim() !== user.pin.trim()) {
+      if (String(pin).trim() !== user.pin.trim()) {
         return { success: false, error: '安全 PIN 碼不正確，請重新輸入' };
       }
     }
@@ -698,14 +676,14 @@ export class DatabaseService {
     weight: number;
     goal: FitnessGoal;
   }): UserProfile | null {
-    const trimmed = userData.name.trim().toLowerCase();
+    const trimmed = String(userData.name || '').trim().toLowerCase();
     for (const user of this.users.values()) {
       if (
-        user.name.trim().toLowerCase() === trimmed &&
+        user.name && String(user.name).trim().toLowerCase() === trimmed &&
         user.gender === userData.gender &&
-        user.age === userData.age &&
-        user.height === userData.height &&
-        user.weight === userData.weight &&
+        user.age === Number(userData.age) &&
+        user.height === Number(userData.height) &&
+        user.weight === Number(userData.weight) &&
         user.goal === userData.goal
       ) {
         return user;
@@ -725,47 +703,48 @@ export class DatabaseService {
     activity_level?: 'sedentary' | 'light' | 'moderate' | 'very_active';
     pin?: string;
   }): UserProfile {
+    const safeName = String(userData.name || '').trim();
     const existingExact = this.findDuplicateUser(userData);
     if (existingExact) {
       return existingExact;
     }
 
-    const existingName = this.findUserByName(userData.name);
+    const existingName = this.findUserByName(safeName);
     if (existingName) {
       return this.updateUser(existingName.id, {
         gender: userData.gender,
-        age: userData.age,
-        height: userData.height,
-        weight: userData.weight,
-        body_fat_rate: userData.body_fat_rate,
+        age: Number(userData.age),
+        height: Number(userData.height),
+        weight: Number(userData.weight),
+        body_fat_rate: userData.body_fat_rate ? Number(userData.body_fat_rate) : undefined,
         goal: userData.goal,
         activity_level: userData.activity_level,
-        pin: userData.pin || existingName.pin
+        pin: userData.pin ? String(userData.pin).trim() : existingName.pin
       }) || existingName;
     }
 
     const id = 'usr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
     const sync_code = this.generateUniqueSyncCode();
     const activity_level = userData.activity_level || 'moderate';
-    const body_fat_rate = userData.body_fat_rate || (userData.gender === 'male' ? 18 : 24);
+    const body_fat_rate = userData.body_fat_rate ? Number(userData.body_fat_rate) : (userData.gender === 'male' ? 18 : 24);
     const metrics = calculateUserMetrics(
       userData.gender,
-      userData.weight,
-      userData.height,
-      userData.age,
+      Number(userData.weight),
+      Number(userData.height),
+      Number(userData.age),
       userData.goal,
       activity_level
     );
 
     const newUser: UserProfile = {
       id,
-      name: userData.name.trim() || '新健身學員',
+      name: safeName || '新健身學員',
       sync_code,
-      pin: userData.pin ? userData.pin.trim() : undefined,
+      pin: userData.pin ? String(userData.pin).trim() : undefined,
       gender: userData.gender,
-      age: userData.age,
-      height: userData.height,
-      weight: userData.weight,
+      age: Number(userData.age),
+      height: Number(userData.height),
+      weight: Number(userData.weight),
       body_fat_rate,
       goal: userData.goal,
       activity_level,
@@ -827,7 +806,6 @@ export class DatabaseService {
     }
     const deleted = this.users.delete(targetId);
     if (deleted) {
-      // 連帶清理該使用者的所有餐點紀錄
       this.meals = this.meals.filter(m => m.user_id !== targetId);
       this.saveUsersToDisk();
       this.saveMealsToDisk();
@@ -836,7 +814,7 @@ export class DatabaseService {
   }
 
   // =========================================================================
-  // 餐點紀錄 (Meal Logs) 管理方法
+  // 餐點紀錄 (Meal Logs) & 今日總結 (Daily Summary) 管理方法
   // =========================================================================
 
   public getMealsByUserId(userId: string): MealLog[] {
@@ -853,19 +831,55 @@ export class DatabaseService {
       id: 'meal_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       created_at: new Date().toISOString()
     };
-    this.meals.unshift(newMeal);
+    this.meals.push(newMeal);
     this.saveMealsToDisk();
     return newMeal;
   }
 
-  public deleteMeal(mealId: string, userId: string): boolean {
-    const index = this.meals.findIndex(m => m.id === mealId && m.user_id === userId);
-    if (index !== -1) {
-      this.meals.splice(index, 1);
-      this.saveMealsToDisk();
-      return true;
-    }
-    return false;
+  public getDailySummary(userId: string, dateStr?: string) {
+    const user = this.getUser(userId);
+    if (!user) return null;
+
+    const targetDate = dateStr ? new Date(dateStr) : new Date();
+    const targetDateISO = targetDate.toISOString().split('T')[0];
+
+    const todayMeals = this.meals.filter(m => {
+      if (m.user_id !== user.id) return false;
+      const mealDate = new Date(m.timestamp).toISOString().split('T')[0];
+      return mealDate === targetDateISO;
+    });
+
+    const consumed = todayMeals.reduce(
+      (acc, m) => {
+        acc.calories += m.total_calories || 0;
+        acc.protein += m.total_protein || 0;
+        acc.carbs += m.total_carbs || 0;
+        acc.fat += m.total_fat || 0;
+        return acc;
+      },
+      { calories: 0, protein: 0, carbs: 0, fat: 0 }
+    );
+
+    consumed.calories = Math.round(consumed.calories);
+    consumed.protein = Math.round(consumed.protein * 10) / 10;
+    consumed.carbs = Math.round(consumed.carbs * 10) / 10;
+    consumed.fat = Math.round(consumed.fat * 10) / 10;
+
+    const compensationPlan = buildNextDayCompensationPlan(user, consumed, targetDate);
+
+    return {
+      date: targetDateISO,
+      user,
+      consumed,
+      remaining: {
+        calories: Math.max(0, user.target_calories - consumed.calories),
+        protein: Math.max(0, Math.round((user.target_protein_g - consumed.protein) * 10) / 10),
+        carbs: Math.max(0, Math.round((user.target_carbs_g - consumed.carbs) * 10) / 10),
+        fat: Math.max(0, Math.round((user.target_fat_g - consumed.fat) * 10) / 10)
+      },
+      today_meals: todayMeals,
+      compensation_plan: compensationPlan
+    };
   }
 }
 
